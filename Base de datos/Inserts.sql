@@ -1,3 +1,6 @@
+USE matricula
+GO
+
 INSERT INTO carrera (id, nombre) VALUES 
 ('TI', 'Ingeniería de Sistemas'), ('AD', 'Administración'), ('II', 'Ingeniería Industrial'),
 ('DE', 'Derecho'), ('PS', 'Psicología'), ('ME', 'Medicina'),
@@ -7,6 +10,7 @@ INSERT INTO carrera (id, nombre) VALUES
 GO
 
 SET NOCOUNT ON;
+
 DECLARE @i INT = 1;
 DECLARE @dni CHAR(9), @carnet CHAR(6), @prov INT, @id_car CHAR(2);
 DECLARE @f_ingreso DATE, @dir VARCHAR(255);
@@ -19,14 +23,9 @@ INSERT INTO @Apellidos VALUES ('Rodriguez'),('Gonzalez'),('Morales'),('Vargas'),
 
 WHILE @i <= 2000
 BEGIN
-    -- Determinar Provincia (1-7) y Carrera (1-15)
     SET @prov = (ABS(CHECKSUM(NEWID())) % 7) + 1;
-    SET @id_car = (SELECT TOP 1 id FROM carrera ORDER BY ABS(CHECKSUM(NEWID())));
-    
-    -- Generar DNI (Provincia + 8 dígitos)
+    SET @id_car = (SELECT TOP 1 id FROM carrera ORDER BY NEWID());
     SET @dni = CAST(@prov AS CHAR(1)) + RIGHT('00000000' + CAST(ABS(CHECKSUM(NEWID())) % 100000000 AS VARCHAR(8)), 8);
-    
-    -- Carnet: Letra de carrera + Correlativo (Ej: T00800)
     SET @carnet = LEFT(@id_car, 1) + RIGHT('00000' + CAST(@i AS VARCHAR(5)), 5);
 
     SET @dir = CASE @prov 
@@ -44,7 +43,9 @@ BEGIN
             (SELECT TOP 1 n FROM @Nombres ORDER BY NEWID()), 
             (SELECT TOP 1 a FROM @Apellidos ORDER BY NEWID()), 
             (SELECT TOP 1 a FROM @Apellidos ORDER BY NEWID()),
-            CAST((ABS(CHECKSUM(NEWID())) % 3 + 6) AS CHAR(1)) + RIGHT(CAST(ABS(CHECKSUM(NEWID())) AS VARCHAR(10)), 7),
+            -- Lógica corregida: Prefijo (8,7,6) + 7 dígitos exactos con ceros a la izquierda
+            CAST((ABS(CHECKSUM(NEWID())) % 3 + 6) AS CHAR(1)) + 
+            RIGHT('0000000' + CAST(ABS(CHECKSUM(NEWID())) % 10000000 AS VARCHAR(7)), 7),
             @dir, @f_ingreso, @id_car
         );
         SET @i = @i + 1;
@@ -60,7 +61,7 @@ DECLARE @dni_p CHAR(9), @id_car_p CHAR(2), @prov_p INT;
 WHILE @j <= 400
 BEGIN
     SET @prov_p = (ABS(CHECKSUM(NEWID())) % 7) + 1;
-    -- Asignación de carrera: Las primeras 15 vueltas aseguran 1 profesor por carrera, luego es azar
+    -- Asegurar que cada carrera tenga profesores, luego azar
     IF @j <= 15 
         SET @id_car_p = (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY id) as rn FROM carrera) t WHERE rn = @j);
     ELSE 
@@ -76,7 +77,9 @@ BEGIN
             (SELECT TOP 1 n FROM (VALUES ('Carlos'),('Marta'),('Roberto'),('Ligia'),('Hernan'),('Sonia'),('Ricardo')) AS T(n) ORDER BY NEWID()),
             (SELECT TOP 1 a FROM (VALUES ('Vargas'),('Jimenez'),('Mora'),('Soto'),('Rojas')) AS A(a) ORDER BY NEWID()),
             (SELECT TOP 1 a FROM (VALUES ('Castro'),('Perez'),('Solano'),('Gomez')) AS A2(a) ORDER BY NEWID()),
-            '2' + RIGHT(CAST(ABS(CHECKSUM(NEWID())) AS VARCHAR(10)), 7),
+            -- Lógica corregida: Prefijo 2 o 4 + 7 dígitos exactos
+            CAST((ABS(CHECKSUM(NEWID())) % 2 * 2 + 2) AS CHAR(1)) + 
+            RIGHT('0000000' + CAST(ABS(CHECKSUM(NEWID())) % 10000000 AS VARCHAR(7)), 7),
             (CASE @prov_p WHEN 1 THEN 'San Jose' WHEN 2 THEN 'Alajuela' WHEN 3 THEN 'Cartago' WHEN 4 THEN 'Heredia' 
              WHEN 5 THEN 'Guanacaste' WHEN 6 THEN 'Puntarenas' WHEN 7 THEN 'Limon' END),
             @id_car_p
@@ -208,17 +211,3 @@ WHERE FilaCupo <= cupos
 ORDER BY NEWID();
 
 PRINT 'Matrícula de 20,000 registros completada.';
-
--- Verificación de coherencia
-SELECT TOP 5 
-    e.nombre + ' ' + e.primer_apellido as Estudiante,
-    c.nombre as Carrera_Estudiante,
-    cur.nombre as Curso_Matriculado,
-    s.fecha_inicio as Fecha_Clase,
-    e.fecha_ingreso as Fecha_Ingreso_U
-FROM matricula m
-JOIN estudiante e ON m.dni_estudiante = e.dni
-JOIN carrera c ON e.id_carrera = c.id
-JOIN seccion s ON m.id_seccion = s.id_seccion
-JOIN curso cur ON s.id_curso = cur.id;
-GO
